@@ -10,12 +10,16 @@ Generates high-craft animated SVG cards matching the "Signal from Noise" portfol
   - ink: #EDEDF2
   - mute: #8E8EA3
 
-Features:
-  - Inline CSS keyframe animations + SMIL animations
-  - Fonts subsetted with fonttools and embedded as base64 WOFF data URIs
+Fixes & Hardening:
+  - Safe CSS animations: uses opacity fades and isolated transforms so SVG elements
+    never have their base coordinates overwritten to (0, 0)
+  - Explicit numeric width & height on all <svg> root tags (no width="100%") to guarantee
+    exact aspect-ratio preservation in GitHub Markdown <img> tags
+  - 100% strict XML escaping (html.escape) on all dynamic and static text
+  - Absolute SVG coordinates for avatar, text, badges, and grids
+  - Fonts subsetted with fontTools and embedded as base64 WOFF data URIs
   - Respects @media (prefers-reduced-motion: reduce)
   - Supports STATIC=1 environment variable / --static flag for screenshot mode
-  - Staggered timeline delays from top to bottom
 """
 
 import os
@@ -23,6 +27,7 @@ import sys
 import json
 import base64
 import io
+import html
 from datetime import datetime, timedelta
 from fontTools import subset
 
@@ -50,7 +55,7 @@ BUILDER = "#4FD8C9"
 HUMAN = "#F2B968"
 INK = "#EDEDF2"
 MUTE = "#8E8EA3"
-DARK_MUTE = "#323246"
+DARK_MUTE = "#262638"
 
 # ---------------------------------------------------------------------------
 # Font Subsetting & Embedding Engine
@@ -128,7 +133,7 @@ def get_font_face_css():
     return "\n".join(css)
 
 def get_base_css(delay_offset=0.0):
-    """Generates standard styles, keyframes, and reduced-motion rules."""
+    """Generates standard styles, safe keyframes, and reduced-motion rules."""
     font_css = get_font_face_css()
     
     if STATIC_MODE:
@@ -142,13 +147,13 @@ def get_base_css(delay_offset=0.0):
         user-select: none;
       }}
       .font-display {{
-        font-family: 'Clash Display', -apple-system, BlinkMacSystemFont, sans-serif;
+        font-family: 'Clash Display', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       }}
       .font-body {{
-        font-family: 'General Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+        font-family: 'General Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       }}
       .font-mono {{
-        font-family: 'JetBrains Mono', monospace;
+        font-family: 'JetBrains Mono', 'SF Mono', Consolas, Menlo, monospace;
       }}
     </style>"""
 
@@ -162,36 +167,22 @@ def get_base_css(delay_offset=0.0):
         user-select: none;
       }}
       .font-display {{
-        font-family: 'Clash Display', -apple-system, BlinkMacSystemFont, sans-serif;
+        font-family: 'Clash Display', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       }}
       .font-body {{
-        font-family: 'General Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+        font-family: 'General Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       }}
       .font-mono {{
-        font-family: 'JetBrains Mono', monospace;
+        font-family: 'JetBrains Mono', 'SF Mono', Consolas, Menlo, monospace;
       }}
 
-      /* Fade Up Entrance */
-      @keyframes fadeUp {{
+      /* Safe Opacity Fade In - Never corrupts SVG transform coordinates */
+      @keyframes fadeIn {{
         0% {{
           opacity: 0;
-          transform: translateY(12px);
         }}
         100% {{
           opacity: 1;
-          transform: translateY(0);
-        }}
-      }}
-
-      /* Scale In */
-      @keyframes scaleIn {{
-        0% {{
-          opacity: 0;
-          transform: scale(0.96);
-        }}
-        100% {{
-          opacity: 1;
-          transform: scale(1);
         }}
       }}
 
@@ -205,17 +196,10 @@ def get_base_css(delay_offset=0.0):
         }}
       }}
 
-      /* Continuous subtle neon shimmer */
-      @keyframes shimmer {{
-        0% {{ stop-color: #8B7CFF; }}
-        50% {{ stop-color: #4FD8C9; }}
-        100% {{ stop-color: #8B7CFF; }}
-      }}
-
       /* Blinking status dot */
       @keyframes livePulse {{
         0%, 100% {{ opacity: 1; transform: scale(1); }}
-        50% {{ opacity: 0.4; transform: scale(0.85); }}
+        50% {{ opacity: 0.35; transform: scale(0.85); }}
       }}
 
       /* Bar growth */
@@ -232,22 +216,22 @@ def get_base_css(delay_offset=0.0):
 
       .fade-0 {{
         opacity: 0;
-        animation: fadeUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        animation: fadeIn 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
         animation-delay: {delay_offset:.2f}s;
       }}
       .fade-1 {{
         opacity: 0;
-        animation: fadeUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        animation: fadeIn 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
         animation-delay: {delay_offset + 0.15:.2f}s;
       }}
       .fade-2 {{
         opacity: 0;
-        animation: fadeUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        animation: fadeIn 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
         animation-delay: {delay_offset + 0.3:.2f}s;
       }}
       .fade-3 {{
         opacity: 0;
-        animation: fadeUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        animation: fadeIn 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
         animation-delay: {delay_offset + 0.45:.2f}s;
       }}
 
@@ -277,7 +261,7 @@ def get_base_css(delay_offset=0.0):
 def load_contributions():
     path = os.path.join(DATA_DIR, "contributions.json")
     if not os.path.exists(path):
-        print(f"Warning: {path} not found. Using fallback synthetic data.")
+        print(f"Warning: {path} not found. Using fallback data.")
         return get_fallback_data()
     try:
         with open(path, "r", encoding="utf-8") as f:
@@ -332,7 +316,6 @@ def process_stats(contributions_data):
         m = item["date"][:7] # YYYY-MM
         monthly_map[m] = monthly_map.get(m, 0) + item["count"]
 
-    # Sort months chronologically, pick last 12
     sorted_months = sorted(monthly_map.keys())[-12:]
     monthly_list = [{"month": m, "count": monthly_map[m]} for m in sorted_months]
 
@@ -348,7 +331,7 @@ def process_stats(contributions_data):
     }
 
 # ---------------------------------------------------------------------------
-# Card 1: Hero Card
+# Card 1: Hero Card (880x220)
 # ---------------------------------------------------------------------------
 def render_hero_card():
     width = 880
@@ -362,20 +345,20 @@ def render_hero_card():
         with open(photo_path, "rb") as f:
             b64_img = base64.b64encode(f.read()).decode("ascii")
         portrait_svg = f"""
-        <!-- Portrait Frame -->
-        <g class="fade-1" transform="translate(710, 40)">
-          <defs>
-            <clipPath id="avatar-clip">
-              <circle cx="70" cy="70" r="62" />
-            </clipPath>
-          </defs>
-          <circle cx="70" cy="70" r="66" fill="none" stroke="{SIGNAL}" stroke-width="2" class="pulse-border" opacity="0.8" />
-          <circle cx="70" cy="70" r="70" fill="none" stroke="{BORDER}" stroke-width="1" />
-          <image href="data:image/webp;base64,{b64_img}" x="8" y="8" width="124" height="124" clip-path="url(#avatar-clip)" preserveAspectRatio="xMidYMid slice"/>
-        </g>
+  <!-- Portrait Frame with Absolute Coordinates (Anchored at cx=760, cy=110) -->
+  <g class="fade-1">
+    <defs>
+      <clipPath id="avatar-clip">
+        <circle cx="760" cy="110" r="60" />
+      </clipPath>
+    </defs>
+    <circle cx="760" cy="110" r="65" fill="none" stroke="{SIGNAL}" stroke-width="2" class="pulse-border" opacity="0.8" />
+    <circle cx="760" cy="110" r="69" fill="none" stroke="{BORDER}" stroke-width="1" />
+    <image href="data:image/webp;base64,{b64_img}" x="700" y="50" width="120" height="120" clip-path="url(#avatar-clip)" preserveAspectRatio="xMidYMid slice"/>
+  </g>
         """
 
-    svg = f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {height}" width="100%" height="{height}">
+    svg = f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {height}" width="{width}" height="{height}">
   {get_base_css(delay_offset)}
   <defs>
     <linearGradient id="hero-bg" x1="0%" y1="0%" x2="100%" y2="100%">
@@ -397,28 +380,27 @@ def render_hero_card():
   <line x1="20" y1="1" x2="380" y2="1" stroke="url(#sig-beam)" stroke-width="2.5" stroke-linecap="round"/>
 
   <!-- Status Bar -->
-  <g class="fade-0" transform="translate(36, 42)">
-    <rect x="0" y="0" width="170" height="24" rx="12" fill="{DEPTH}" stroke="{BORDER}" stroke-width="1" />
-    <circle cx="14" cy="12" r="4" fill="{BUILDER}" class="live-dot" />
-    <text x="26" y="16" fill="{BUILDER}" font-size="11" class="font-mono" letter-spacing="1">LIVE TELEMETRY</text>
-    
-    <text x="185" y="16" fill="{MUTE}" font-size="11" class="font-mono">SIGNAL FROM NOISE // ARCHITECT</text>
+  <g class="fade-0">
+    <rect x="36" y="28" width="168" height="24" rx="12" fill="{DEPTH}" stroke="{BORDER}" stroke-width="1" />
+    <circle cx="50" cy="40" r="4" fill="{BUILDER}" class="live-dot" />
+    <text x="62" y="44" fill="{BUILDER}" font-size="11" class="font-mono" letter-spacing="1">LIVE TELEMETRY</text>
+    <text x="218" y="44" fill="{MUTE}" font-size="11" class="font-mono">SIGNAL FROM NOISE // ARCHITECT</text>
   </g>
 
-  <!-- Name & Headline -->
-  <g class="fade-1" transform="translate(36, 102)">
-    <text x="0" y="0" fill="{INK}" font-size="34" class="font-display" letter-spacing="-0.5">Ujjwal Kaushik</text>
+  <!-- Name -->
+  <g class="fade-1">
+    <text x="36" y="92" fill="{INK}" font-size="32" class="font-display" letter-spacing="-0.5">Ujjwal Kaushik</text>
   </g>
 
-  <!-- Subtitle & Value Proposition -->
-  <g class="fade-2" transform="translate(36, 134)">
-    <text x="0" y="0" fill="{SIGNAL}" font-size="15" class="font-mono" font-weight="600">Full-Stack &amp; Applied AI Engineer</text>
-    <text x="0" y="24" fill="{MUTE}" font-size="14" class="font-body">Engineering clarity from technical entropy. Enterprise RAG, distributed backends &amp; computer vision.</text>
+  <!-- Subtitle & Bio -->
+  <g class="fade-2">
+    <text x="36" y="122" fill="{SIGNAL}" font-size="15" class="font-mono" font-weight="600">Full-Stack &amp; Applied AI Engineer</text>
+    <text x="36" y="148" fill="{MUTE}" font-size="13" class="font-body">Engineering clarity from technical entropy. Enterprise RAG, distributed backends &amp; computer vision.</text>
   </g>
 
   <!-- Bottom Telemetry Chips -->
-  <g class="fade-3" transform="translate(36, 192)">
-    <text x="0" y="0" fill="{MUTE}" font-size="11" class="font-mono">ACADEMICS <tspan fill="{INK}">8.92 SGPA</tspan>  ·  EXPERIENCE <tspan fill="{BUILDER}">2x Vietnam Onsite</tspan>  ·  LEADERSHIP <tspan fill="{HUMAN}">8 Engineers</tspan>  ·  MENTORED <tspan fill="{INK}">170+</tspan></text>
+  <g class="fade-3">
+    <text x="36" y="188" fill="{MUTE}" font-size="11" class="font-mono">ACADEMICS <tspan fill="{INK}">8.92 SGPA</tspan>  ·  EXPERIENCE <tspan fill="{BUILDER}">2x Vietnam Onsite</tspan>  ·  LEADERSHIP <tspan fill="{HUMAN}">8 Engineers</tspan>  ·  MENTORED <tspan fill="{INK}">170+</tspan></text>
   </g>
 
   {portrait_svg}
@@ -426,7 +408,7 @@ def render_hero_card():
     return svg
 
 # ---------------------------------------------------------------------------
-# Card 2, 3, 4: Three Linked Tiles in a Row
+# Card 2, 3, 4: Three Linked Focus Tiles (420x210)
 # ---------------------------------------------------------------------------
 def render_tile_card(tile_index):
     width = 420
@@ -437,38 +419,44 @@ def render_tile_card(tile_index):
             "num": "01",
             "accent": SIGNAL,
             "badge": "ENTERPRISE RAG",
-            "stat": "86.0% Recall@10",
+            "stat": "86.0% Recall",
             "title": "DocNexus Workstation",
-            "desc": "Dual-engine RAG with verifiable inline page citations, 4-tier RBAC & knowledge graphs on 5,183 BEIR documents.",
+            "line1": "Dual-engine RAG with verifiable inline",
+            "line2": "citations, 4-tier RBAC &amp; knowledge graphs",
+            "line3": "on 5,183 BEIR benchmark documents.",
             "stack": "FastAPI · Llama 3.3 · Ollama · MinIO",
-            "delay": 0.4
+            "delay": 0.35
         },
         {
             "num": "02",
             "accent": BUILDER,
             "badge": "ISRO / SIH 2026",
-            "stat": "461.8 FPS · Zero Leakage",
+            "stat": "461.8 FPS · SIL",
             "title": "SANKET Optical Tracking",
-            "desc": "Air-gapped Software-in-the-Loop tracking workstation for deep-space laser communications across 492 test cases.",
+            "line1": "Air-gapped Software-in-the-Loop tracking",
+            "line2": "workstation for deep-space laser communications",
+            "line3": "with zero leakage across 492 verified tests.",
             "stack": "OpenCV · Python · PySide6 · Three.js",
-            "delay": 0.55
+            "delay": 0.50
         },
         {
             "num": "03",
             "accent": HUMAN,
-            "badge": "LEADERSHIP & SYSTEMS",
+            "badge": "LEADERSHIP &amp; SYSTEMS",
             "stat": "8 Engineers Led",
-            "title": "EDC & Institutional Infra",
-            "desc": "Technical Lead owning live event registration & real-time bidding auction portals. 170+ mentored in DSA.",
-            "stack": "Node.js · PostgreSQL · System Design",
-            "delay": 0.7
+            "title": "EDC Institutional Infra",
+            "line1": "Technical Lead owning live event registration",
+            "line2": "&amp; real-time bidding auction portals.",
+            "line3": "170+ mentored across DSA and algorithms.",
+            "stack": "Node.js · PostgreSQL · Prisma · System Design",
+            "delay": 0.65
         }
     ]
 
     c = configs[tile_index]
     delay_offset = c["delay"]
 
-    svg = f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {height}" width="100%" height="{height}">
+    svg = f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {height}" width="{width}" height="{height}">
   {get_base_css(delay_offset)}
   <defs>
     <linearGradient id="tile-bg-{tile_index}" x1="0%" y1="0%" x2="100%" y2="100%">
@@ -481,42 +469,42 @@ def render_tile_card(tile_index):
   <rect x="1" y="1" width="{width - 2}" height="{height - 2}" rx="12" fill="url(#tile-bg-{tile_index})" stroke="{BORDER}" stroke-width="1"/>
   <rect x="1" y="1" width="{width - 2}" height="{height - 2}" rx="12" fill="none" stroke="{c['accent']}40" stroke-width="1.2" class="pulse-border"/>
 
-  <!-- Top Indicator -->
+  <!-- Top Indicator & Badge -->
   <circle cx="28" cy="28" r="4" fill="{c['accent']}" class="live-dot"/>
   <text x="40" y="32" fill="{c['accent']}" font-size="10.5" class="font-mono" letter-spacing="1.5">{c['badge']}</text>
 
-  <rect x="{width - 120}" y="17" width="96" height="22" rx="6" fill="{DEPTH}" stroke="{BORDER}" stroke-width="1"/>
-  <text x="{width - 72}" y="32" fill="{c['accent']}" font-size="10" class="font-mono" text-anchor="middle" font-weight="600">{c['stat']}</text>
+  <rect x="{width - 126}" y="17" width="102" height="22" rx="6" fill="{DEPTH}" stroke="{BORDER}" stroke-width="1"/>
+  <text x="{width - 75}" y="32" fill="{c['accent']}" font-size="10" class="font-mono" text-anchor="middle" font-weight="600">{html.escape(c['stat'])}</text>
 
   <!-- Title -->
-  <g class="fade-1" transform="translate(26, 74)">
-    <text x="0" y="0" fill="{INK}" font-size="19" class="font-display">{c['title']}</text>
+  <g class="fade-1">
+    <text x="24" y="74" fill="{INK}" font-size="18" class="font-display">{html.escape(c['title'])}</text>
   </g>
 
-  <!-- Description -->
-  <g class="fade-2" transform="translate(26, 102)">
-    <text x="0" y="0" fill="{MUTE}" font-size="12" class="font-body">
-      <tspan x="0" dy="0">{c['desc'][:50]}</tspan>
-      <tspan x="0" dy="17">{c['desc'][50:108]}</tspan>
-      <tspan x="0" dy="17">{c['desc'][108:]}</tspan>
+  <!-- Description with explicit tspan lines -->
+  <g class="fade-2">
+    <text x="24" y="104" fill="{MUTE}" font-size="11.5" class="font-body">
+      <tspan x="24" dy="0">{c['line1']}</tspan>
+      <tspan x="24" dy="17">{c['line2']}</tspan>
+      <tspan x="24" dy="17">{c['line3']}</tspan>
     </text>
   </g>
 
   <!-- Stack Footer -->
-  <g class="fade-3" transform="translate(26, 184)">
-    <rect x="-6" y="-14" width="{width - 40}" height="22" rx="4" fill="{VOID}" opacity="0.6"/>
-    <text x="0" y="1" fill="{MUTE}" font-size="10" class="font-mono">STACK: <tspan fill="{c['accent']}">{c['stack']}</tspan></text>
+  <g class="fade-3">
+    <rect x="20" y="170" width="{width - 40}" height="24" rx="4" fill="{VOID}" opacity="0.6"/>
+    <text x="28" y="186" fill="{MUTE}" font-size="10" class="font-mono">STACK: <tspan fill="{c['accent']}">{html.escape(c['stack'])}</tspan></text>
   </g>
 </svg>"""
     return svg
 
 # ---------------------------------------------------------------------------
-# Card 5: Monthly Contributions Chart & Streak Stats
+# Card 5: Monthly Contributions Chart & Streak Stats (880x290)
 # ---------------------------------------------------------------------------
 def render_stats_card(stats):
     width = 880
     height = 290
-    delay_offset = 0.9
+    delay_offset = 0.85
 
     total = stats["total"]
     active_days = stats["active_days"]
@@ -527,11 +515,10 @@ def render_stats_card(stats):
     long_streak = stats["longest_streak"]
     monthly = stats["monthly"]
 
-    # Calculate bar coordinates
     chart_x = 420
-    chart_y = 70
+    chart_y = 65
     chart_w = 420
-    chart_h = 160
+    chart_h = 165
     
     max_count = max(m["count"] for m in monthly) if monthly else 1
     num_bars = len(monthly)
@@ -546,16 +533,14 @@ def render_stats_card(stats):
         b_h = max(int((m["count"] / max_count) * (chart_h - 40)), 6)
         b_y = chart_y + chart_h - b_h
         
-        # Month string format e.g. "Jul"
         try:
             m_dt = datetime.strptime(m["month"], "%Y-%m")
             m_label = m_dt.strftime("%b")
         except:
             m_label = m["month"][-2:]
 
-        bar_delay = delay_offset + 0.2 + (i * 0.05)
-
-        anim_style = "" if STATIC_MODE else f'style="transform-origin: {b_x + bar_width/2}px {chart_y + chart_h}px; animation: growBar 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards; animation-delay: {bar_delay:.2f}s;"'
+        bar_delay = delay_offset + 0.2 + (i * 0.04)
+        anim_style = "" if STATIC_MODE else f'style="transform-origin: {b_x + bar_width/2:.1f}px {chart_y + chart_h:.1f}px; animation: growBar 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards; animation-delay: {bar_delay:.2f}s;"'
 
         bars_svg.append(f"""
         <g {anim_style}>
@@ -569,7 +554,7 @@ def render_stats_card(stats):
         <text x="{b_x + bar_width/2:.1f}" y="{chart_y + chart_h + 20}" fill="{MUTE}" font-size="10" class="font-mono" text-anchor="middle">{m_label}</text>
         """)
 
-    svg = f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {height}" width="100%" height="{height}">
+    svg = f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {height}" width="{width}" height="{height}">
   {get_base_css(delay_offset)}
   <defs>
     <linearGradient id="stats-bg" x1="0%" y1="0%" x2="100%" y2="100%">
@@ -588,56 +573,55 @@ def render_stats_card(stats):
   <rect x="1" y="1" width="{width - 2}" height="{height - 2}" rx="14" fill="none" stroke="{BORDER_HIGHLIGHT}" stroke-width="1.2" class="pulse-border"/>
 
   <!-- Card Header -->
-  <g class="fade-0" transform="translate(36, 40)">
-    <text x="0" y="0" fill="{SIGNAL}" font-size="11" class="font-mono" letter-spacing="1.5">TELEMETRY // CONTRIBUTION VOLUME &amp; STREAKS</text>
-    <text x="{width - 72}" y="0" fill="{MUTE}" font-size="11" class="font-mono" text-anchor="end">{total} CONTRIBUTIONS / YEAR</text>
-    <line x1="0" y1="14" x2="{width - 72}" y2="14" stroke="{BORDER}" stroke-width="1" />
+  <g class="fade-0">
+    <text x="36" y="38" fill="{SIGNAL}" font-size="11" class="font-mono" letter-spacing="1.5">TELEMETRY // CONTRIBUTION CADENCE &amp; STREAKS</text>
+    <text x="{width - 36}" y="38" fill="{INK}" font-size="11" class="font-mono" text-anchor="end">{total} CONTRIBUTIONS / YEAR</text>
+    <line x1="36" y1="48" x2="{width - 36}" y2="48" stroke="{BORDER}" stroke-width="1" />
   </g>
 
-  <!-- Left: 4 Metric Cards Grid (2x2) -->
-  <g class="fade-1" transform="translate(36, 75)">
+  <!-- Left: 4 Metric Cards Grid (2x2) with Absolute Coordinates -->
+  <g class="fade-1">
     <!-- Metric 1: Current Streak -->
-    <rect x="0" y="0" width="160" height="74" rx="8" fill="{DEPTH}" stroke="{BORDER}" stroke-width="1" />
-    <text x="16" y="24" fill="{MUTE}" font-size="10" class="font-mono" letter-spacing="1">CURRENT STREAK</text>
-    <text x="16" y="54" fill="{SIGNAL}" font-size="24" class="font-display">{curr_streak} <tspan font-size="13" class="font-mono" fill="{MUTE}">Days</tspan></text>
+    <rect x="36" y="70" width="162" height="74" rx="8" fill="{DEPTH}" stroke="{BORDER}" stroke-width="1" />
+    <text x="52" y="94" fill="{MUTE}" font-size="10" class="font-mono" letter-spacing="1">CURRENT STREAK</text>
+    <text x="52" y="126" fill="{SIGNAL}" font-size="24" class="font-display">{curr_streak} <tspan font-size="13" class="font-mono" fill="{MUTE}">Days</tspan></text>
 
     <!-- Metric 2: Longest Streak -->
-    <rect x="176" y="0" width="160" height="74" rx="8" fill="{DEPTH}" stroke="{BORDER}" stroke-width="1" />
-    <text x="192" y="24" fill="{MUTE}" font-size="10" class="font-mono" letter-spacing="1">LONGEST STREAK</text>
-    <text x="192" y="54" fill="{INK}" font-size="24" class="font-display">{long_streak} <tspan font-size="13" class="font-mono" fill="{MUTE}">Days</tspan></text>
+    <rect x="214" y="70" width="162" height="74" rx="8" fill="{DEPTH}" stroke="{BORDER}" stroke-width="1" />
+    <text x="230" y="94" fill="{MUTE}" font-size="10" class="font-mono" letter-spacing="1">LONGEST STREAK</text>
+    <text x="230" y="126" fill="{INK}" font-size="24" class="font-display">{long_streak} <tspan font-size="13" class="font-mono" fill="{MUTE}">Days</tspan></text>
 
     <!-- Metric 3: Active Days -->
-    <rect x="0" y="88" width="160" height="74" rx="8" fill="{DEPTH}" stroke="{BORDER}" stroke-width="1" />
-    <text x="16" y="112" fill="{MUTE}" font-size="10" class="font-mono" letter-spacing="1">ACTIVE DAYS</text>
-    <text x="16" y="142" fill="{BUILDER}" font-size="24" class="font-display">{active_days} <tspan font-size="12" class="font-mono" fill="{MUTE}">({active_pct}%)</tspan></text>
+    <rect x="36" y="156" width="162" height="74" rx="8" fill="{DEPTH}" stroke="{BORDER}" stroke-width="1" />
+    <text x="52" y="180" fill="{MUTE}" font-size="10" class="font-mono" letter-spacing="1">ACTIVE DAYS</text>
+    <text x="52" y="212" fill="{BUILDER}" font-size="24" class="font-display">{active_days} <tspan font-size="12" class="font-mono" fill="{MUTE}">({active_pct}%)</tspan></text>
 
     <!-- Metric 4: Busiest Day -->
-    <rect x="176" y="88" width="160" height="74" rx="8" fill="{DEPTH}" stroke="{BORDER}" stroke-width="1" />
-    <text x="192" y="112" fill="{MUTE}" font-size="10" class="font-mono" letter-spacing="1">BUSIEST DAY</text>
-    <text x="192" y="142" fill="{HUMAN}" font-size="24" class="font-display">{busiest_cnt} <tspan font-size="11" class="font-mono" fill="{MUTE}">({busiest_date[-5:]})</tspan></text>
+    <rect x="214" y="156" width="162" height="74" rx="8" fill="{DEPTH}" stroke="{BORDER}" stroke-width="1" />
+    <text x="230" y="180" fill="{MUTE}" font-size="10" class="font-mono" letter-spacing="1">BUSIEST DAY</text>
+    <text x="230" y="212" fill="{HUMAN}" font-size="24" class="font-display">{busiest_cnt} <tspan font-size="11" class="font-mono" fill="{MUTE}">({busiest_date[-5:]})</tspan></text>
   </g>
 
   <!-- Right: Monthly Bar Chart -->
-  <!-- Subtle Grid Horizontal Line -->
   <line x1="{chart_x}" y1="{chart_y + chart_h}" x2="{chart_x + chart_w}" y2="{chart_y + chart_h}" stroke="{DARK_MUTE}" stroke-width="1"/>
 
   {"".join(bars_svg)}
   {"".join(labels_svg)}
 
   <!-- Footer Legend -->
-  <g class="fade-3" transform="translate(36, 266)">
-    <circle cx="6" cy="-4" r="3" fill="{SIGNAL}"/>
-    <text x="16" y="0" fill="{MUTE}" font-size="10" class="font-mono">Monthly commit cadence calculated live via GitHub API</text>
+  <g class="fade-3">
+    <circle cx="42" cy="262" r="3" fill="{SIGNAL}"/>
+    <text x="52" y="266" fill="{MUTE}" font-size="10" class="font-mono">Monthly commit cadence calculated live via GitHub API</text>
   </g>
 </svg>"""
     return svg
 
 # ---------------------------------------------------------------------------
-# Card 6+: Featured Repositories
+# Card 6+: Featured Repositories (880x150)
 # ---------------------------------------------------------------------------
 def render_repo_card(repo_id):
     width = 880
-    height = 145
+    height = 150
 
     repos = {
         "docnexus": {
@@ -645,20 +629,20 @@ def render_repo_card(repo_id):
             "full_name": "Ujjwal-Qubit / DocNexus",
             "accent": SIGNAL,
             "badge": "Enterprise Client Delivery · SciFact Verified",
-            "desc": "Enterprise RAG and knowledge graph system with zero-hallucination citations, 4-tier RBAC, and hybrid search fusion.",
+            "desc": "Enterprise RAG & knowledge graph system with zero-hallucination citations, 4-tier RBAC, and hybrid search fusion.",
             "metrics": "86.0% Recall@10  ·  0.6893 MRR@10  ·  100% Relevance",
             "stack": ["FastAPI", "React 19", "Llama 3.3 70B", "Ollama", "MinIO", "Podman"],
-            "delay": 1.3
+            "delay": 1.1
         },
         "sanket": {
             "title": "SANKET",
             "full_name": "Ujjwal-Qubit / Run_Time_Terror",
             "accent": BUILDER,
             "badge": "ISRO / SIH 2026 (Problem Statement 26169)",
-            "desc": "Air-gapped Software-in-the-Loop simulation and tracking workstation for deep-space laser communications.",
+            "desc": "Air-gapped Software-in-the-Loop simulation & tracking workstation for deep-space laser communications.",
             "metrics": "0.067s Acquisition (+96.5%)  ·  461.8 FPS  ·  492/492 Tests",
             "stack": ["Python 3.11", "OpenCV", "Three.js", "PySide6", "QtWebEngine"],
-            "delay": 1.5
+            "delay": 1.25
         },
         "auradesign": {
             "title": "AuraDesign.AI",
@@ -668,7 +652,7 @@ def render_repo_card(repo_id):
             "desc": "Sees what your users actually see — full-page DOM scraping, 20x20 Gaussian thermal diffusion heatmaps, and 1-click code fixes.",
             "metrics": "5 UX Laws Audited  ·  Gaussian Heatmaps  ·  Dual-LLM Pipeline",
             "stack": ["React 18", "Node.js", "Express", "Puppeteer", "Pinecone", "Groq Llama 4"],
-            "delay": 1.7
+            "delay": 1.4
         },
         "edith": {
             "title": "E.D.I.T.H.",
@@ -678,7 +662,7 @@ def render_repo_card(repo_id):
             "desc": "Education Dynamic Intelligent Task Handler — chats with your notes, reads scanned handwritten OCR, tasks and timers.",
             "metrics": "Gemini API Chat  ·  Tesseract OCR  ·  Integrated Document Vault",
             "stack": ["FastAPI", "React", "Python", "Gemini API", "Tesseract OCR", "Vercel"],
-            "delay": 1.9
+            "delay": 1.55
         }
     }
 
@@ -686,18 +670,18 @@ def render_repo_card(repo_id):
     delay_offset = r["delay"]
 
     pills_svg = []
-    px = 0
+    px = 36
     for tag in r["stack"]:
-        tag_w = len(tag) * 7.2 + 18
+        tag_w = len(tag) * 7.0 + 16
         pills_svg.append(f"""
-        <g transform="translate({px}, 0)">
+        <g transform="translate({px:.1f}, 112)">
           <rect x="0" y="0" width="{tag_w:.1f}" height="20" rx="4" fill="{DEPTH}" stroke="{BORDER}" stroke-width="1"/>
-          <text x="{tag_w/2:.1f}" y="13.5" fill="{MUTE}" font-size="10" class="font-mono" text-anchor="middle">{tag}</text>
+          <text x="{tag_w/2:.1f}" y="13.5" fill="{MUTE}" font-size="10" class="font-mono" text-anchor="middle">{html.escape(tag)}</text>
         </g>
         """)
         px += tag_w + 8
 
-    svg = f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {height}" width="100%" height="{height}">
+    svg = f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {height}" width="{width}" height="{height}">
   {get_base_css(delay_offset)}
   <defs>
     <linearGradient id="repo-bg-{repo_id}" x1="0%" y1="0%" x2="100%" y2="100%">
@@ -711,55 +695,48 @@ def render_repo_card(repo_id):
   <rect x="1" y="1" width="{width - 2}" height="{height - 2}" rx="12" fill="none" stroke="{r['accent']}35" stroke-width="1.2" class="pulse-border"/>
 
   <!-- Left Accent Bar -->
-  <line x1="1" y1="24" x2="1" y2="{height - 24}" stroke="{r['accent']}" stroke-width="3" stroke-linecap="round"/>
+  <line x1="1" y1="20" x2="1" y2="{height - 20}" stroke="{r['accent']}" stroke-width="3" stroke-linecap="round"/>
 
-  <!-- Header -->
-  <g class="fade-0" transform="translate(32, 34)">
-    <circle cx="5" cy="-4" r="4" fill="{r['accent']}" class="live-dot"/>
-    <text x="18" y="0" fill="{INK}" font-size="19" class="font-display">{r['title']}</text>
-    <text x="135" y="-1" fill="{MUTE}" font-size="12" class="font-mono">({r['full_name']})</text>
+  <!-- Header with Absolute Coordinates -->
+  <g class="fade-0">
+    <circle cx="44" cy="32" r="4" fill="{r['accent']}" class="live-dot"/>
+    <text x="56" y="37" fill="{INK}" font-size="19" class="font-display">{html.escape(r['title'])}</text>
+    <text x="175" y="36" fill="{MUTE}" font-size="12" class="font-mono">({html.escape(r['full_name'])})</text>
     
     <!-- Right Badge -->
-    <rect x="{width - 32 - 280}" y="-16" width="280" height="24" rx="6" fill="{DEPTH}" stroke="{BORDER}" stroke-width="1"/>
-    <text x="{width - 32 - 140}" y="0" fill="{r['accent']}" font-size="10" class="font-mono" text-anchor="middle" font-weight="600">{r['badge']}</text>
+    <rect x="{width - 36 - 290}" y="19" width="290" height="24" rx="6" fill="{DEPTH}" stroke="{BORDER}" stroke-width="1"/>
+    <text x="{width - 36 - 145}" y="35" fill="{r['accent']}" font-size="10" class="font-mono" text-anchor="middle" font-weight="600">{html.escape(r['badge'])}</text>
   </g>
 
-  <!-- Description -->
-  <g class="fade-1" transform="translate(32, 62)">
-    <text x="0" y="0" fill="{MUTE}" font-size="13" class="font-body">{r['desc']}</text>
-    <text x="0" y="20" fill="{r['accent']}" font-size="11.5" class="font-mono" font-weight="600">KEY TELEMETRY: <tspan fill="{INK}">{r['metrics']}</tspan></text>
+  <!-- Description with Absolute Coordinates -->
+  <g class="fade-1">
+    <text x="36" y="68" fill="{MUTE}" font-size="13" class="font-body">{html.escape(r['desc'])}</text>
+    <text x="36" y="92" fill="{r['accent']}" font-size="11.5" class="font-mono" font-weight="600">KEY TELEMETRY: <tspan fill="{INK}">{html.escape(r['metrics'])}</tspan></text>
   </g>
 
-  <!-- Stack Pills Footer -->
-  <g class="fade-2" transform="translate(32, 108)">
+  <!-- Stack Pills Footer with Absolute Coordinates -->
+  <g class="fade-2">
     {"".join(pills_svg)}
   </g>
 </svg>"""
     return svg
 
 # ---------------------------------------------------------------------------
-# Card 10: 52-Week Contribution Graph in Brand Colors
+# Card 10: 52-Week Contribution Graph in Brand Colors (880x190)
 # ---------------------------------------------------------------------------
 def render_contributions_graph(stats):
     width = 880
     height = 190
-    delay_offset = 2.1
+    delay_offset = 1.7
 
     raw_days = stats["raw_days"] # 364 days = 52 weeks * 7
     total = stats["total"]
 
-    # 52 columns x 7 rows
     cell_size = 11
     gap = 3.5
     start_x = 55
     start_y = 52
 
-    # Brand Level Colors:
-    # 0 -> DEPTH (#101018)
-    # 1 -> Deep Violet (#2E2260)
-    # 2 -> Mid Violet (#5A45B8)
-    # 3 -> Signal (#8B7CFF)
-    # 4 -> Builder (#4FD8C9) peak highlight
     level_colors = [
         DEPTH,
         "#2E2260",
@@ -784,7 +761,6 @@ def render_contributions_graph(stats):
         fill_color = level_colors[lvl]
         border_stroke = BORDER if lvl == 0 else "none"
 
-        # Check month change for header label
         m_str = day["date"][5:7] # MM
         if m_str != curr_month and row == 0 and col < 50:
             curr_month = m_str
@@ -794,13 +770,11 @@ def render_contributions_graph(stats):
                 m_label = m_str
             month_headers.append(f'<text x="{cx}" y="{start_y - 10}" fill="{MUTE}" font-size="10" class="font-mono">{m_label}</text>')
 
-        # Staggered wave animation delay
-        cell_delay = delay_offset + 0.1 + (col * 0.02) + (row * 0.01)
+        cell_delay = delay_offset + 0.1 + (col * 0.015)
         anim_attr = "" if STATIC_MODE else f'class="fade-0" style="animation-delay: {cell_delay:.2f}s;"'
 
         cells_svg.append(f'<rect x="{cx}" y="{cy}" width="{cell_size}" height="{cell_size}" rx="2.5" fill="{fill_color}" stroke="{border_stroke}" stroke-width="0.8" {anim_attr}/>')
 
-    # Day labels (Mon, Wed, Fri)
     day_labels = [
         (1, "Mon"),
         (3, "Wed"),
@@ -811,7 +785,7 @@ def render_contributions_graph(stats):
         dy = start_y + r_idx * (cell_size + gap) + 9
         day_labels_svg.append(f'<text x="{start_x - 12}" y="{dy}" fill="{MUTE}" font-size="9" class="font-mono" text-anchor="end">{name}</text>')
 
-    svg = f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {height}" width="100%" height="{height}">
+    svg = f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {height}" width="{width}" height="{height}">
   {get_base_css(delay_offset)}
   <defs>
     <linearGradient id="grid-bg" x1="0%" y1="0%" x2="100%" y2="100%">
@@ -825,9 +799,9 @@ def render_contributions_graph(stats):
   <rect x="1" y="1" width="{width - 2}" height="{height - 2}" rx="14" fill="none" stroke="{BORDER_HIGHLIGHT}" stroke-width="1.2" class="pulse-border"/>
 
   <!-- Header -->
-  <g class="fade-0" transform="translate(36, 30)">
-    <text x="0" y="0" fill="{SIGNAL}" font-size="11" class="font-mono" letter-spacing="1.5">CONTRIBUTION MATRIX // 52 WEEKS</text>
-    <text x="{width - 72}" y="0" fill="{INK}" font-size="11" class="font-mono" text-anchor="end">{total} CONTRIBUTIONS IN THE LAST YEAR</text>
+  <g class="fade-0">
+    <text x="36" y="30" fill="{SIGNAL}" font-size="11" class="font-mono" letter-spacing="1.5">CONTRIBUTION MATRIX // 52 WEEKS</text>
+    <text x="{width - 36}" y="30" fill="{INK}" font-size="11" class="font-mono" text-anchor="end">{total} CONTRIBUTIONS IN THE LAST YEAR</text>
   </g>
 
   <!-- Month Headers -->
@@ -846,20 +820,20 @@ def render_contributions_graph(stats):
   </g>
 
   <!-- Legend -->
-  <g class="fade-3" transform="translate({width - 210}, {height - 22})">
-    <text x="0" y="9" fill="{MUTE}" font-size="10" class="font-mono">Less</text>
-    <rect x="32" y="0" width="10" height="10" rx="2" fill="{level_colors[0]}" stroke="{BORDER}" stroke-width="0.8"/>
-    <rect x="46" y="0" width="10" height="10" rx="2" fill="{level_colors[1]}"/>
-    <rect x="60" y="0" width="10" height="10" rx="2" fill="{level_colors[2]}"/>
-    <rect x="74" y="0" width="10" height="10" rx="2" fill="{level_colors[3]}"/>
-    <rect x="88" y="0" width="10" height="10" rx="2" fill="{level_colors[4]}"/>
-    <text x="106" y="9" fill="{MUTE}" font-size="10" class="font-mono">More</text>
+  <g class="fade-3">
+    <text x="{width - 210}" y="{height - 13}" fill="{MUTE}" font-size="10" class="font-mono">Less</text>
+    <rect x="{width - 178}" y="{height - 22}" width="10" height="10" rx="2" fill="{level_colors[0]}" stroke="{BORDER}" stroke-width="0.8"/>
+    <rect x="{width - 164}" y="{height - 22}" width="10" height="10" rx="2" fill="{level_colors[1]}"/>
+    <rect x="{width - 150}" y="{height - 22}" width="10" height="10" rx="2" fill="{level_colors[2]}"/>
+    <rect x="{width - 136}" y="{height - 22}" width="10" height="10" rx="2" fill="{level_colors[3]}"/>
+    <rect x="{width - 122}" y="{height - 22}" width="10" height="10" rx="2" fill="{level_colors[4]}"/>
+    <text x="{width - 104}" y="{height - 13}" fill="{MUTE}" font-size="10" class="font-mono">More</text>
   </g>
 
   <!-- Status indicator -->
-  <g class="fade-3" transform="translate(36, {height - 18})">
-    <circle cx="4" cy="-4" r="3" fill="{BUILDER}"/>
-    <text x="14" y="0" fill="{MUTE}" font-size="10" class="font-mono">Palette calibrated to Signal (#8B7CFF) &amp; Builder (#4FD8C9)</text>
+  <g class="fade-3">
+    <circle cx="40" cy="{height - 17}" r="3" fill="{BUILDER}"/>
+    <text x="50" y="{height - 13}" fill="{MUTE}" font-size="10" class="font-mono">Palette calibrated to Signal ({SIGNAL}) &amp; Builder ({BUILDER})</text>
   </g>
 </svg>"""
     return svg
@@ -870,7 +844,6 @@ def render_contributions_graph(stats):
 def main():
     print(f"[*] Generating SVG Cards (STATIC_MODE={STATIC_MODE})...")
     
-    # Load and process contribution data
     raw_contrib = load_contributions()
     stats = process_stats(raw_contrib)
     print(f"[*] Stats: {stats['total']} total commits, streak: {stats['current_streak']}, active: {stats['active_days']} days")
@@ -881,7 +854,7 @@ def main():
         f.write(hero_svg)
     print("  -> Rendered cards/hero.svg")
 
-    # Render Cards 2, 3, 4: Three Linked Tiles
+    # Render Cards 2, 3, 4: Three Linked Focus Tiles
     for i in range(3):
         tile_svg = render_tile_card(i)
         filename = f"tile-{i+1}.svg"
