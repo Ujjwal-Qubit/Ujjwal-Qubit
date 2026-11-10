@@ -1,0 +1,44 @@
+name: Daily Profile Cards Refresh
+
+on:
+  schedule:
+    - cron: "0 0 * * *" # Daily at midnight UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install fonttools brotli requests
+
+      - name: Fetch Latest GitHub Contribution Data
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python fetch_contributions.py
+
+      - name: Render Animated SVG Cards
+        run: |
+          python generate_cards.py
+
+      - name: Commit & Push Changes
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add cards/*.svg data/contributions.json
+          git diff --staged --quiet || (git commit -m "chore(telemetry): refresh animated SVG cards and contribution matrix [skip ci]" && git push)
