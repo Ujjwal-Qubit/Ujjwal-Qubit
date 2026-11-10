@@ -3,8 +3,6 @@
 <!-- Card 1: Master Hero with Portrait & Telemetry -->
 <img src="cards/hero.svg" alt="Ujjwal Kaushik - Full-Stack & Applied AI Engineer" width="100%"/>
 
-<br/>
-
 <!-- Card 2, 3, 4: Three Linked Focus Tiles (width 32.5% each) -->
 <a href="https://github.com/Ujjwal-Qubit/DocNexus"><img src="cards/tile-1.svg" alt="DocNexus · Enterprise RAG" width="32.5%"/></a>
 <a href="https://github.com/Ujjwal-Qubit/Run_Time_Terror"><img src="cards/tile-2.svg" alt="SANKET · Optical Tracking" width="32.5%"/></a>
